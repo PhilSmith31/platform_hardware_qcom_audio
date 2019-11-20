@@ -689,14 +689,8 @@ void AudioPolicyManagerCustom::setPhoneState(audio_mode_t state)
     // pertaining to sonification strategy see handleIncallSonification()
     if (isStateInCall(oldState)) {
         ALOGV("setPhoneState() in call state management: new state is %d", state);
-        for (size_t j = 0; j < mOutputs.size(); j++) {
-            audio_io_handle_t curOutput = mOutputs.keyAt(j);
-            for (int stream = 0; stream < AUDIO_STREAM_CNT; stream++) {
-                if (stream == AUDIO_STREAM_PATCH) {
-                    continue;
-                }
-                handleIncallSonification((audio_stream_type_t)stream, false, true, curOutput);
-            }
+        for (int stream = 0; stream < AUDIO_STREAM_FOR_POLICY_CNT; stream++) {
+            handleIncallSonification((audio_stream_type_t)stream, false, true);
         }
 
         // force reevaluating accessibility routing when call stops
@@ -977,18 +971,12 @@ void AudioPolicyManagerCustom::setPhoneState(audio_mode_t state)
     // pertaining to sonification strategy see handleIncallSonification()
     if (isStateInCall(state)) {
         ALOGV("setPhoneState() in call state management: new state is %d", state);
-        for (size_t j = 0; j < mOutputs.size(); j++) {
-            audio_io_handle_t curOutput = mOutputs.keyAt(j);
-            for (int stream = 0; stream < AUDIO_STREAM_CNT; stream++) {
-               if (stream == AUDIO_STREAM_PATCH) {
-                    continue;
-                }
-                handleIncallSonification((audio_stream_type_t)stream, true, true, curOutput);
-           }
+        for (int stream = 0; stream < AUDIO_STREAM_FOR_POLICY_CNT; stream++) {
+            handleIncallSonification((audio_stream_type_t)stream, true, true);
         }
 
-       // force reevaluating accessibility routing when call starts
-       mpClientInterface->invalidateStream(AUDIO_STREAM_ACCESSIBILITY);
+        // force reevaluating accessibility routing when call starts
+        mpClientInterface->invalidateStream(AUDIO_STREAM_ACCESSIBILITY);
     }
 
     // Flag that ringtone volume must be limited to music volume until we exit MODE_RINGTONE
@@ -1067,10 +1055,10 @@ status_t AudioPolicyManagerCustom::stopSource(sp<AudioOutputDescriptor> outputDe
     // handle special case for sonification while in call
     if (isInCall()) {
         if (outputDesc->isDuplicated()) {
-            handleIncallSonification(stream, false, false, outputDesc->subOutput1()->mIoHandle);
-            handleIncallSonification(stream, false, false, outputDesc->subOutput2()->mIoHandle);
+            handleIncallSonification(stream, false, false);
+            handleIncallSonification(stream, false, false);
         }
-        handleIncallSonification(stream, false, false, outputDesc->mIoHandle);
+        handleIncallSonification(stream, false, false);
     }
 
     if (outputDesc->mRefCount[stream] > 0) {
@@ -1203,7 +1191,7 @@ status_t AudioPolicyManagerCustom::startSource(sp<AudioOutputDescriptor> outputD
 
         // handle special case for sonification while in call
         if (isInCall()) {
-            handleIncallSonification(stream, true, false, outputDesc->mIoHandle);
+            handleIncallSonification(stream, true, false);
         }
 
         // apply volume rules for current stream and device if necessary
@@ -1224,15 +1212,14 @@ status_t AudioPolicyManagerCustom::startSource(sp<AudioOutputDescriptor> outputD
     else {
         // handle special case for sonification while in call
         if (isInCall()) {
-            handleIncallSonification(stream, true, false, outputDesc->mIoHandle);
+            handleIncallSonification(stream, true, false);
         }
     }
     return NO_ERROR;
 }
 
 void AudioPolicyManagerCustom::handleIncallSonification(audio_stream_type_t stream,
-                                                      bool starting, bool stateChange,
-                                                      audio_io_handle_t output)
+                                                      bool starting, bool stateChange)
 {
     if(!hasPrimaryOutput()) {
         return;
@@ -1250,7 +1237,7 @@ void AudioPolicyManagerCustom::handleIncallSonification(audio_stream_type_t stre
     const routing_strategy stream_strategy = getStrategy(stream);
     if ((stream_strategy == STRATEGY_SONIFICATION) ||
             ((stream_strategy == STRATEGY_SONIFICATION_RESPECTFUL))) {
-        sp<SwAudioOutputDescriptor> outputDesc = mOutputs.valueFor(output);
+        sp<SwAudioOutputDescriptor> outputDesc = mPrimaryOutput;
         ALOGV("handleIncallSonification() stream %d starting %d device %x stateChange %d",
                 stream, starting, outputDesc->mDevice, stateChange);
         if (outputDesc->mRefCount[stream]) {
@@ -1341,8 +1328,7 @@ status_t AudioPolicyManagerCustom::checkAndSetVolume(audio_stream_type_t stream,
             voiceVolume = 1.0;
         }
 
-        if (voiceVolume != mLastVoiceVolume && ((outputDesc == mPrimaryOutput) ||
-            isDirectOutput(outputDesc->mIoHandle) || device & AUDIO_DEVICE_OUT_ALL_USB)) {
+        if (voiceVolume != mLastVoiceVolume) {
             mpClientInterface->setVoiceVolume(voiceVolume, delayMs);
             mLastVoiceVolume = voiceVolume;
         }
